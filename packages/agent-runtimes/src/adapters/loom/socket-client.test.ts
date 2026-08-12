@@ -6,17 +6,17 @@ import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
 import {
-  HerdrError,
-  HerdrSocketClient,
-  defaultHerdrSocketPath,
-  type HerdrEventStream,
+  LoomError,
+  LoomSocketClient,
+  defaultLoomSocketPath,
+  type LoomEventStream,
 } from './socket-client';
 
 let socketCounter = 0;
 
 function makeSocketPath(): string {
   socketCounter += 1;
-  return join(tmpdir(), `herdr-test-${process.pid}-${socketCounter}.sock`);
+  return join(tmpdir(), `loom-test-${process.pid}-${socketCounter}.sock`);
 }
 
 interface FakeServer {
@@ -77,7 +77,7 @@ function requestId(request: unknown): string {
   return (request as { id: string }).id;
 }
 
-describe('HerdrSocketClient', () => {
+describe('LoomSocketClient', () => {
   const servers: FakeServer[] = [];
 
   after(async () => {
@@ -86,10 +86,10 @@ describe('HerdrSocketClient', () => {
 
   async function withServer(
     respond: (request: unknown, socket: Socket) => void
-  ): Promise<HerdrSocketClient> {
+  ): Promise<LoomSocketClient> {
     const server = await startFakeServer(respond);
     servers.push(server);
-    return new HerdrSocketClient({
+    return new LoomSocketClient({
       socketPath: server.socketPath,
       callTimeoutMs: 2_000,
     });
@@ -135,7 +135,7 @@ describe('HerdrSocketClient', () => {
     });
   });
 
-  test('call rejects with a HerdrError carrying code + message on error envelope', async () => {
+  test('call rejects with a LoomError carrying code + message on error envelope', async () => {
     const client = await withServer((request, socket) => {
       socket.end(
         errorLine(requestId(request), 'not_found', 'pane pane_9 does not exist')
@@ -145,7 +145,7 @@ describe('HerdrSocketClient', () => {
     await assert.rejects(
       () => client.call('agent.get', { target: 'pane_9' }),
       (err: unknown) => {
-        assert.ok(err instanceof HerdrError);
+        assert.ok(err instanceof LoomError);
         assert.equal(err.code, 'not_found');
         assert.equal(err.message, 'pane pane_9 does not exist');
         return true;
@@ -209,7 +209,7 @@ describe('HerdrSocketClient', () => {
       );
     });
 
-    const stream: HerdrEventStream = client.subscribe({
+    const stream: LoomEventStream = client.subscribe({
       subscriptions: [{ type: 'pane.agent_status_changed', pane_id: 'p1' }],
     });
 
@@ -272,7 +272,7 @@ describe('HerdrSocketClient', () => {
     await assert.rejects(
       () => client.ping(),
       (err: unknown) => {
-        assert.ok(err instanceof HerdrError);
+        assert.ok(err instanceof LoomError);
         assert.equal(err.code, 'protocol_mismatch');
         return true;
       }
@@ -303,7 +303,7 @@ describe('HerdrSocketClient', () => {
     await assert.rejects(
       () => client.call('session.snapshot', {}),
       (err: unknown) => {
-        assert.ok(err instanceof HerdrError);
+        assert.ok(err instanceof LoomError);
         assert.equal(err.code, 'malformed_response');
         return true;
       }
@@ -318,7 +318,7 @@ describe('HerdrSocketClient', () => {
     await assert.rejects(
       () => client.call('session.snapshot', {}),
       (err: unknown) => {
-        assert.ok(err instanceof HerdrError);
+        assert.ok(err instanceof LoomError);
         assert.equal(err.code, 'connection_closed');
         return true;
       }
@@ -326,16 +326,16 @@ describe('HerdrSocketClient', () => {
   });
 });
 
-describe('defaultHerdrSocketPath', () => {
-  test('prefers HERDR_SOCKET_PATH when set', () => {
-    const resolved = defaultHerdrSocketPath({
-      HERDR_SOCKET_PATH: '/custom/herdr.sock',
+describe('defaultLoomSocketPath', () => {
+  test('prefers LOOM_SOCKET_PATH when set', () => {
+    const resolved = defaultLoomSocketPath({
+      LOOM_SOCKET_PATH: '/custom/loom.sock',
     });
-    assert.equal(resolved, '/custom/herdr.sock');
+    assert.equal(resolved, '/custom/loom.sock');
   });
 
-  test('falls back to XDG_CONFIG_HOME/herdr/herdr.sock', () => {
-    const resolved = defaultHerdrSocketPath({ XDG_CONFIG_HOME: '/xdg' });
-    assert.equal(resolved, join('/xdg', 'herdr', 'herdr.sock'));
+  test('falls back to XDG_CONFIG_HOME/loom/loom.sock', () => {
+    const resolved = defaultLoomSocketPath({ XDG_CONFIG_HOME: '/xdg' });
+    assert.equal(resolved, join('/xdg', 'loom', 'loom.sock'));
   });
 });

@@ -1,37 +1,37 @@
-// Headless NDJSON socket client for the herdr control API.
+// Headless NDJSON socket client for the loom control API.
 //
-// herdr (vendored under apps/desktop/engines/herdr, Apache-2.0) is the protocol
+// loom (vendored under apps/desktop/engines/loom, Apache-2.0) is the protocol
 // author; this client speaks its newline-delimited JSON Unix-socket wire so
 // Recoder can drive the engine as an execution substrate. See
-// docs/HERDR-INTEGRATION.md.
+// docs/LOOM-INTEGRATION.md.
 //
 // Contract (mirrors the plan's framing landmines):
-//   - Connect to `herdr.sock`. `herdr-client.sock` is a SEPARATE private TUI
+//   - Connect to `loom.sock`. `loom-client.sock` is a SEPARATE private TUI
 //     render wire — connecting there yields garbage; never point this client at
 //     it.
 //   - Each request opens a connection, writes `JSON.stringify(req) + "\n"`, then
 //     LINE-BUFFERS incoming bytes (a single reply can span multiple socket
 //     reads; a naive one-read client truncates).
 //   - Discriminate each line: `result` -> resolve; `error` -> reject with a
-//     HerdrError carrying code + message. A malformed or partial line is
+//     LoomError carrying code + message. A malformed or partial line is
 //     surfaced truthfully — the client never fabricates a result.
 //   - The socket path is INJECTED via the constructor and is never read from
 //     `process.env` inside this module (config-injection rule, mirroring the
-//     tmux adapter). Use `defaultHerdrSocketPath(env)` at the composition edge.
+//     tmux adapter). Use `defaultLoomSocketPath(env)` at the composition edge.
 
 import { createConnection, type Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  HERDR_PROTOCOL_VERSION,
-  isHerdrErrorResponse,
-  isHerdrSubscriptionEvent,
-  isHerdrSuccessResponse,
-  type HerdrMethod,
-  type HerdrRequest,
-  type HerdrResult,
-  type HerdrSubscriptionEvent,
+  LOOM_PROTOCOL_VERSION,
+  isLoomErrorResponse,
+  isLoomSubscriptionEvent,
+  isLoomSuccessResponse,
+  type LoomMethod,
+  type LoomRequest,
+  type LoomResult,
+  type LoomSubscriptionEvent,
   type EventsSubscribeParams,
   type PongResult,
 } from './protocol';
@@ -40,31 +40,31 @@ import {
 const DEFAULT_CALL_TIMEOUT_MS = 10_000;
 
 /**
- * Default blocking-wait read timeout (ms). Matches herdr's max agent timeout so
+ * Default blocking-wait read timeout (ms). Matches loom's max agent timeout so
  * `agent.wait` / `agent.prompt{wait}` can hold the socket for a full run.
  */
 const DEFAULT_WAIT_TIMEOUT_MS = 300_000;
 
-/** Canonical socket filename. `herdr-client.sock` is the wrong (TUI) wire. */
-export const HERDR_SOCKET_FILENAME = 'herdr.sock';
+/** Canonical socket filename. `loom-client.sock` is the wrong (TUI) wire. */
+export const LOOM_SOCKET_FILENAME = 'loom.sock';
 
 /**
- * A protocol- or transport-level failure. `code` echoes herdr's `error.code`
+ * A protocol- or transport-level failure. `code` echoes loom's `error.code`
  * when the server rejected, or a client-side sentinel (`timeout`,
  * `connection_closed`, `malformed_response`, `protocol_mismatch`, ...).
  */
-export class HerdrError extends Error {
+export class LoomError extends Error {
   readonly code: string;
 
   constructor(code: string, message: string) {
     super(message);
-    this.name = 'HerdrError';
+    this.name = 'LoomError';
     this.code = code;
   }
 }
 
-export interface HerdrSocketClientOptions {
-  /** Absolute path to the herdr `herdr.sock` Unix socket (injected, never env). */
+export interface LoomSocketClientOptions {
+  /** Absolute path to the loom `loom.sock` Unix socket (injected, never env). */
   socketPath: string;
   /** Override the single-shot `call` timeout. */
   callTimeoutMs?: number;
@@ -72,11 +72,11 @@ export interface HerdrSocketClientOptions {
   waitTimeoutMs?: number;
 }
 
-export interface HerdrCallOptions {
+export interface LoomCallOptions {
   timeoutMs?: number;
 }
 
-export interface HerdrSubscribeOptions {
+export interface LoomSubscribeOptions {
   /**
    * Close the stream if no event (and no `subscription_started`) arrives within
    * this window. Omit to stream until the caller closes.
@@ -85,7 +85,7 @@ export interface HerdrSubscribeOptions {
 }
 
 /** An open subscription: an async iterator of bare `{event, data}` lines. */
-export interface HerdrEventStream extends AsyncIterable<HerdrSubscriptionEvent> {
+export interface LoomEventStream extends AsyncIterable<LoomSubscriptionEvent> {
   /** Stop the stream and close the underlying socket. */
   close(): void;
 }
@@ -111,17 +111,17 @@ class LineBuffer {
   }
 }
 
-export class HerdrSocketClient {
+export class LoomSocketClient {
   private readonly socketPath: string;
   private readonly callTimeoutMs: number;
   private readonly waitTimeoutMs: number;
   private requestCounter = 0;
 
-  constructor(options: HerdrSocketClientOptions) {
+  constructor(options: LoomSocketClientOptions) {
     if (options.socketPath == null || options.socketPath.length === 0) {
-      throw new HerdrError(
+      throw new LoomError(
         'invalid_socket_path',
-        'herdr socketPath must be a non-empty path'
+        'loom socketPath must be a non-empty path'
       );
     }
     this.socketPath = options.socketPath;
@@ -133,10 +133,10 @@ export class HerdrSocketClient {
    * Single-shot: open, send, take the FIRST reply line, then close. Use for the
    * fast request/response methods (`ping`, `agent.get`, `worktree.create`, ...).
    */
-  call<Result extends HerdrResult = HerdrResult>(
-    method: HerdrMethod,
+  call<Result extends LoomResult = LoomResult>(
+    method: LoomMethod,
     params: unknown,
-    options?: HerdrCallOptions
+    options?: LoomCallOptions
   ): Promise<Result> {
     return this.requestOneLine<Result>(
       method,
@@ -150,10 +150,10 @@ export class HerdrSocketClient {
    * timeout for methods that hold the socket until they settle
    * (`agent.prompt{wait}`, `agent.wait`, `events.wait`).
    */
-  callAndWait<Result extends HerdrResult = HerdrResult>(
-    method: HerdrMethod,
+  callAndWait<Result extends LoomResult = LoomResult>(
+    method: LoomMethod,
     params: unknown,
-    options?: HerdrCallOptions
+    options?: LoomCallOptions
   ): Promise<Result> {
     return this.requestOneLine<Result>(
       method,
@@ -167,19 +167,19 @@ export class HerdrSocketClient {
    * expected `protocol` (20). Callers should run this before issuing any other
    * method.
    */
-  async ping(options?: HerdrCallOptions): Promise<PongResult> {
-    const result = await this.call<HerdrResult>('ping', {}, options);
+  async ping(options?: LoomCallOptions): Promise<PongResult> {
+    const result = await this.call<LoomResult>('ping', {}, options);
     if (result.type !== 'pong') {
-      throw new HerdrError(
+      throw new LoomError(
         'unexpected_response',
-        `herdr ping returned '${result.type}', expected 'pong'`
+        `loom ping returned '${result.type}', expected 'pong'`
       );
     }
     const pong = result as PongResult;
-    if (pong.protocol !== HERDR_PROTOCOL_VERSION) {
-      throw new HerdrError(
+    if (pong.protocol !== LOOM_PROTOCOL_VERSION) {
+      throw new LoomError(
         'protocol_mismatch',
-        `herdr protocol ${pong.protocol} does not match required ${HERDR_PROTOCOL_VERSION}`
+        `loom protocol ${pong.protocol} does not match required ${LOOM_PROTOCOL_VERSION}`
       );
     }
     return pong;
@@ -192,19 +192,19 @@ export class HerdrSocketClient {
    */
   subscribe(
     params: EventsSubscribeParams,
-    options?: HerdrSubscribeOptions
-  ): HerdrEventStream {
+    options?: LoomSubscribeOptions
+  ): LoomEventStream {
     const socket = createConnection(this.socketPath);
-    const request: HerdrRequest<EventsSubscribeParams> = {
+    const request: LoomRequest<EventsSubscribeParams> = {
       id: this.nextId(),
       method: 'events.subscribe',
       params,
     };
     const lineBuffer = new LineBuffer();
-    const queued: HerdrSubscriptionEvent[] = [];
+    const queued: LoomSubscriptionEvent[] = [];
 
     let resolveNext:
-      ((result: IteratorResult<HerdrSubscriptionEvent>) => void) | null = null;
+      ((result: IteratorResult<LoomSubscriptionEvent>) => void) | null = null;
     let rejectNext: ((reason: unknown) => void) | null = null;
     let failure: unknown = null;
     let finished = false;
@@ -243,7 +243,7 @@ export class HerdrSocketClient {
       idleTimer = setTimeout(() => settle(), options.idleTimeoutMs);
     };
 
-    const emit = (event: HerdrSubscriptionEvent): void => {
+    const emit = (event: LoomSubscriptionEvent): void => {
       armIdle();
       if (resolveNext != null) {
         const resolve = resolveNext;
@@ -264,9 +264,9 @@ export class HerdrSocketClient {
       settle(
         finished
           ? undefined
-          : new HerdrError(
+          : new LoomError(
               'connection_closed',
-              'herdr subscription socket closed'
+              'loom subscription socket closed'
             )
       )
     );
@@ -279,22 +279,22 @@ export class HerdrSocketClient {
           parsed = JSON.parse(line);
         } catch {
           settle(
-            new HerdrError(
+            new LoomError(
               'malformed_event',
-              'herdr subscription emitted a non-JSON line'
+              'loom subscription emitted a non-JSON line'
             )
           );
           return;
         }
 
-        if (isHerdrErrorResponse(parsed)) {
-          settle(new HerdrError(parsed.error.code, parsed.error.message));
+        if (isLoomErrorResponse(parsed)) {
+          settle(new LoomError(parsed.error.code, parsed.error.message));
           return;
         }
 
         if (!acknowledged) {
           if (
-            isHerdrSuccessResponse(parsed) &&
+            isLoomSuccessResponse(parsed) &&
             parsed.result.type === 'subscription_started'
           ) {
             acknowledged = true;
@@ -302,40 +302,40 @@ export class HerdrSocketClient {
             continue;
           }
           settle(
-            new HerdrError(
+            new LoomError(
               'unexpected_response',
-              'herdr subscription did not open with subscription_started'
+              'loom subscription did not open with subscription_started'
             )
           );
           return;
         }
 
-        if (isHerdrSubscriptionEvent(parsed)) {
+        if (isLoomSubscriptionEvent(parsed)) {
           emit(parsed);
           continue;
         }
 
         settle(
-          new HerdrError(
+          new LoomError(
             'unexpected_event',
-            'herdr subscription emitted a non-event line'
+            'loom subscription emitted a non-event line'
           )
         );
         return;
       }
     });
 
-    const iterator: AsyncIterator<HerdrSubscriptionEvent> = {
+    const iterator: AsyncIterator<LoomSubscriptionEvent> = {
       next: () => {
         if (queued.length > 0) {
           return Promise.resolve({
-            value: queued.shift() as HerdrSubscriptionEvent,
+            value: queued.shift() as LoomSubscriptionEvent,
             done: false,
           });
         }
         if (failure != null) return Promise.reject(failure);
         if (finished) return Promise.resolve({ value: undefined, done: true });
-        return new Promise<IteratorResult<HerdrSubscriptionEvent>>(
+        return new Promise<IteratorResult<LoomSubscriptionEvent>>(
           (resolve, reject) => {
             resolveNext = resolve;
             rejectNext = reject;
@@ -354,12 +354,12 @@ export class HerdrSocketClient {
     };
   }
 
-  private requestOneLine<Result extends HerdrResult>(
-    method: HerdrMethod,
+  private requestOneLine<Result extends LoomResult>(
+    method: LoomMethod,
     params: unknown,
     timeoutMs: number
   ): Promise<Result> {
-    const request: HerdrRequest = {
+    const request: LoomRequest = {
       id: this.nextId(),
       method,
       params: params as Record<string, unknown>,
@@ -381,9 +381,9 @@ export class HerdrSocketClient {
       const timer = setTimeout(() => {
         finish(() =>
           reject(
-            new HerdrError(
+            new LoomError(
               'timeout',
-              `herdr ${method} timed out after ${timeoutMs}ms`
+              `loom ${method} timed out after ${timeoutMs}ms`
             )
           )
         );
@@ -397,9 +397,9 @@ export class HerdrSocketClient {
       socket.on('close', () =>
         finish(() =>
           reject(
-            new HerdrError(
+            new LoomError(
               'connection_closed',
-              `herdr ${method} socket closed before a reply`
+              `loom ${method} socket closed before a reply`
             )
           )
         )
@@ -415,30 +415,30 @@ export class HerdrSocketClient {
         } catch {
           finish(() =>
             reject(
-              new HerdrError(
+              new LoomError(
                 'malformed_response',
-                `herdr ${method} returned a non-JSON line`
+                `loom ${method} returned a non-JSON line`
               )
             )
           );
           return;
         }
 
-        if (isHerdrErrorResponse(parsed)) {
+        if (isLoomErrorResponse(parsed)) {
           finish(() =>
-            reject(new HerdrError(parsed.error.code, parsed.error.message))
+            reject(new LoomError(parsed.error.code, parsed.error.message))
           );
           return;
         }
-        if (isHerdrSuccessResponse(parsed)) {
+        if (isLoomSuccessResponse(parsed)) {
           finish(() => resolve(parsed.result as Result));
           return;
         }
         finish(() =>
           reject(
-            new HerdrError(
+            new LoomError(
               'unexpected_response',
-              `herdr ${method} returned an unrecognized line`
+              `loom ${method} returned an unrecognized line`
             )
           )
         );
@@ -453,19 +453,19 @@ export class HerdrSocketClient {
 }
 
 /**
- * Resolve the herdr socket path from the environment for use at the composition
- * edge (the client itself never reads env). Prefers `HERDR_SOCKET_PATH`, else
- * `${XDG_CONFIG_HOME:-~/.config}/herdr/herdr.sock`.
+ * Resolve the loom socket path from the environment for use at the composition
+ * edge (the client itself never reads env). Prefers `LOOM_SOCKET_PATH`, else
+ * `${XDG_CONFIG_HOME:-~/.config}/loom/loom.sock`.
  */
-export function defaultHerdrSocketPath(
+export function defaultLoomSocketPath(
   env: NodeJS.ProcessEnv = process.env
 ): string {
-  const explicit = env.HERDR_SOCKET_PATH;
+  const explicit = env.LOOM_SOCKET_PATH;
   if (explicit != null && explicit.length > 0) return explicit;
   const xdgConfigHome = env.XDG_CONFIG_HOME;
   const configRoot =
     xdgConfigHome != null && xdgConfigHome.length > 0
       ? xdgConfigHome
       : join(homedir(), '.config');
-  return join(configRoot, 'herdr', HERDR_SOCKET_FILENAME);
+  return join(configRoot, 'loom', LOOM_SOCKET_FILENAME);
 }

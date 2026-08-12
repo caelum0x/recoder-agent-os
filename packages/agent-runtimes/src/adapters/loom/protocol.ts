@@ -1,28 +1,32 @@
-// Wire protocol types for the herdr headless control API.
+// Wire protocol types for the loom headless control API.
 //
-// Source of truth: the vendored herdr engine (Apache-2.0), specifically
-// `apps/desktop/engines/herdr/src/api/schema/*.rs`. herdr is the protocol
+// Source of truth: the vendored loom engine (Apache-2.0), specifically
+// `apps/desktop/engines/loom/src/api/schema/*.rs`. loom is the protocol
 // author; these TypeScript types mirror its serde shapes so Recoder can drive
-// the engine as an execution substrate. See docs/HERDR-INTEGRATION.md.
+// the engine as an execution substrate. See docs/LOOM-INTEGRATION.md.
+//
+// ATTRIBUTION (Apache-2.0): the Loom engine is herdr
+// (github.com/herdrdev/herdr, Apache-2.0) vendored + rebranded; these wire types
+// are derived from herdr's protocol. Copyright (c) herdr contributors.
 //
 // Only the ~10 methods a substrate needs are typed here (ping, session.snapshot,
 // worktree.create, worktree.remove, agent.start, agent.get, agent.read,
 // agent.prompt, agent.wait, events.subscribe). The full engine exposes ~45.
 
 /**
- * herdr `PROTOCOL_VERSION`. A `ping` reply whose `protocol` differs from this is
+ * loom `PROTOCOL_VERSION`. A `ping` reply whose `protocol` differs from this is
  * an incompatible server; callers must reject rather than proceed.
  */
-export const HERDR_PROTOCOL_VERSION = 20;
+export const LOOM_PROTOCOL_VERSION = 20;
 
 // --- Request envelope -------------------------------------------------------
 
 /**
- * The substrate-facing method names. herdr flattens `{method, params}` onto the
+ * The substrate-facing method names. loom flattens `{method, params}` onto the
  * request object on the wire (serde `tag = "method", content = "params"`); we
  * keep them as explicit fields and serialize `{id, method, params}`.
  */
-export type HerdrMethod =
+export type LoomMethod =
   | 'ping'
   | 'session.snapshot'
   | 'worktree.create'
@@ -34,23 +38,23 @@ export type HerdrMethod =
   | 'agent.wait'
   | 'events.subscribe';
 
-export interface HerdrRequest<Params = Record<string, unknown>> {
+export interface LoomRequest<Params = Record<string, unknown>> {
   /** Caller-chosen correlation id, echoed back on the response. */
   id: string;
-  method: HerdrMethod;
+  method: LoomMethod;
   params: Params;
 }
 
 // --- Shared scalars ---------------------------------------------------------
 
-/** herdr `AgentStatus` (serde snake_case). */
+/** loom `AgentStatus` (serde snake_case). */
 export type AgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
 
-/** herdr `ReadSource` (serde snake_case). */
+/** loom `ReadSource` (serde snake_case). */
 export type ReadSource =
   'visible' | 'recent' | 'recent_unwrapped' | 'detection';
 
-/** herdr `ReadFormat` (serde snake_case). */
+/** loom `ReadFormat` (serde snake_case). */
 export type ReadFormat = 'text' | 'ansi';
 
 // --- Method params ----------------------------------------------------------
@@ -79,7 +83,7 @@ export interface AgentStartParams {
   kind: string;
   pane_id: string;
   args?: string[];
-  /** Startup timeout in ms. herdr requires `> 3000 && <= 300000`. */
+  /** Startup timeout in ms. loom requires `> 3000 && <= 300000`. */
   timeout_ms?: number;
 }
 
@@ -103,7 +107,7 @@ export interface AgentPromptWaitOptions {
 export interface AgentPromptParams {
   target: string;
   text: string;
-  /** When present, herdr holds the socket until the agent settles (blocking-wait). */
+  /** When present, loom holds the socket until the agent settles (blocking-wait). */
   wait?: AgentPromptWaitOptions;
 }
 
@@ -119,13 +123,13 @@ export interface AgentWaitParams {
  * for lifecycle facts use single-shot `events.wait`. The `type` tag carries the
  * full dotted event name (serde variant rename).
  */
-export interface HerdrSubscription {
+export interface LoomSubscription {
   type: string;
   [key: string]: unknown;
 }
 
 export interface EventsSubscribeParams {
-  subscriptions: HerdrSubscription[];
+  subscriptions: LoomSubscription[];
 }
 
 // --- Nested result payloads -------------------------------------------------
@@ -230,7 +234,7 @@ export interface AgentInfo {
 }
 
 /**
- * herdr `SessionSnapshot` is large; only the fields a substrate reads are typed
+ * loom `SessionSnapshot` is large; only the fields a substrate reads are typed
  * explicitly, with the collections left open for forward-compatibility.
  */
 export interface SessionSnapshot {
@@ -253,7 +257,7 @@ export interface SessionSnapshot {
  * tags). The engine emits ~40 variants; unknown tags still parse through the
  * catch-all so the client never fabricates a result for an untyped line.
  */
-export type HerdrResult =
+export type LoomResult =
   | {
       type: 'pong';
       version: string;
@@ -283,56 +287,56 @@ export type HerdrResult =
   | { type: string; [key: string]: unknown };
 
 /** Convenience narrower for the `pong` handshake result. */
-export type PongResult = Extract<HerdrResult, { type: 'pong' }>;
+export type PongResult = Extract<LoomResult, { type: 'pong' }>;
 
-export interface HerdrErrorBody {
+export interface LoomErrorBody {
   code: string;
   message: string;
 }
 
 /** Success envelope: `{ id, result: { type, ... } }`. */
-export interface HerdrSuccessResponse<
-  Result extends HerdrResult = HerdrResult,
+export interface LoomSuccessResponse<
+  Result extends LoomResult = LoomResult,
 > {
   id: string;
   result: Result;
 }
 
 /** Error envelope: `{ id, error: { code, message } }`. */
-export interface HerdrErrorResponse {
+export interface LoomErrorResponse {
   id: string;
-  error: HerdrErrorBody;
+  error: LoomErrorBody;
 }
 
-export type HerdrResponse = HerdrSuccessResponse | HerdrErrorResponse;
+export type LoomResponse = LoomSuccessResponse | LoomErrorResponse;
 
 /**
  * A bare subscription line: `{ event, data }`, emitted after the initial
  * `subscription_started` result until the caller closes. These have no `id` and
  * no `result` — they must never be treated as a request/response reply.
  */
-export interface HerdrSubscriptionEvent {
+export interface LoomSubscriptionEvent {
   event: string;
   data: unknown;
 }
 
 // --- Discriminators ---------------------------------------------------------
 
-export function isHerdrSuccessResponse(
+export function isLoomSuccessResponse(
   value: unknown
-): value is HerdrSuccessResponse {
+): value is LoomSuccessResponse {
   return isRecord(value) && 'result' in value && isRecord(value.result);
 }
 
-export function isHerdrErrorResponse(
+export function isLoomErrorResponse(
   value: unknown
-): value is HerdrErrorResponse {
+): value is LoomErrorResponse {
   return isRecord(value) && 'error' in value && isRecord(value.error);
 }
 
-export function isHerdrSubscriptionEvent(
+export function isLoomSubscriptionEvent(
   value: unknown
-): value is HerdrSubscriptionEvent {
+): value is LoomSubscriptionEvent {
   return (
     isRecord(value) &&
     typeof value.event === 'string' &&
