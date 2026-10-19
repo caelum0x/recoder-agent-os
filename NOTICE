@@ -1,0 +1,36 @@
+Recoder Agent OS
+Copyright (c) Recoder.
+
+This repository is the open-source orchestration layer extracted from the
+Recoder monorepo (recoder.xyz), a Cursor-like coding agent product. All
+packages here are MIT-licensed and were already decoupled, runtime-agnostic
+contract/SDK packages inside that monorepo before extraction.
+
+Attribution for portions derived from or designed to interoperate with
+third-party sources:
+
+================================================================================
+herdr — https://github.com/herdrdev/herdr (vendored by Recoder as "Loom")
+Licensed under the Apache License, Version 2.0.
+    http://www.apache.org/licenses/LICENSE-2.0
+
+`packages/agent-runtimes/src/adapters/loom/*` is a clean-room TypeScript
+client implementing herdr/Loom's documented Unix-socket terminal-manager wire
+protocol (protocol-20). It does not vendor or copy herdr's Rust source; it
+implements a compatible client against the protocol described in herdr's
+`src/api/schema/*.rs`. No herdr source code is included in this repository.
+
+================================================================================
+beads — https://github.com/steveyegge/beads
+`packages/beads-adapter` is a thin TypeScript adapter around the `bd` CLI
+(beads issue-graph store), used as Recoder's shared cross-agent memory
+substrate. It shells out to the `bd` binary; it does not vendor beads source.
+
+================================================================================
+Recoder's own t3code-derived composition work (see
+docs/RECODER-T3CODE-COMPOSITION.md in the recoder.xyz monorepo) is NOT part of
+this extraction. None of the packages in this repository import or vendor
+pingdotgg/t3code (MIT, T3 Tools Inc) sources.
+================================================================================
+
+No GPL/AGPL/LGPL or other copyleft content is present in this repository.

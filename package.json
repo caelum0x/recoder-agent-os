@@ -1,0 +1,25 @@
+{
+  "name": "recoder-agent-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Recoder Agent OS — the open-source agent orchestration contracts, policy, instruction-loading, memory-candidate lifecycle, A2A wire protocol, and runtime-adapter layer behind the Recoder coding agent platform.",
+  "license": "MIT",
+  "homepage": "https://recoder.xyz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/caelum0x/recoder-agent-os.git"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r run build",
+    "check-types": "pnpm -r run check-types",
+    "test": "pnpm -r run test",
+    "clean": "pnpm -r run clean"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
